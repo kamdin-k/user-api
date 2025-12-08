@@ -105,15 +105,13 @@ app.delete(
       });
   }
 );
-
 userService
   .connect()
   .then(() => {
-    app.listen(HTTP_PORT, () => {
-      console.log("API listening on: " + HTTP_PORT);
-    });
+    console.log("Connected to MongoDB (user-api)");
   })
   .catch((err) => {
-    console.log("unable to start the server: " + err);
-    process.exit();
+    console.log("Unable to connect to MongoDB: " + err);
   });
+
+module.exports = app;

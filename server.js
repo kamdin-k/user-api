@@ -29,17 +29,23 @@ passport.use(
 app.use(express.json());
 app.use(cors());
 app.use(passport.initialize());
-
 app.post("/api/user/register", (req, res) => {
   userService
     .registerUser(req.body)
     .then((msg) => {
       res.json({ message: msg });
     })
-    .catch((msg) => {
+    .catch((err) => {
+      const msg =
+        typeof err === "string"
+          ? err
+          : err && err.message
+          ? err.message
+          : "Registration failed";
       res.status(422).json({ message: msg });
     });
 });
+
 
 app.post("/api/user/login", (req, res) => {
   userService

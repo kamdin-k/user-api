@@ -105,16 +105,30 @@ app.delete(
       });
   }
 );
-userService
-  .connect()
-  .then(() => {
-    app.listen(HTTP_PORT, () => {
-      console.log("API listening on: " + HTTP_PORT);
+if (!process.env.VERCEL) {
+
+  userService
+    .connect()
+    .then(() => {
+      app.listen(HTTP_PORT, () => {
+        console.log("API listening on: " + HTTP_PORT);
+      });
+    })
+    .catch((err) => {
+      console.log("unable to start the server: " + err);
+      process.exit();
     });
-  })
-  .catch((err) => {
-    console.log("unable to start the server: " + err);
-    process.exit();
-  });
+} else {
+  userService
+    .connect()
+    .then(() => {
+      console.log("Connected to MongoDB (Vercel)");
+    })
+    .catch((err) => {
+      console.log("Mongo connect error on Vercel:", err);
+    });
+}
+
+module.exports = app;
 
 

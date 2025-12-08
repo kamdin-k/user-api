@@ -29,23 +29,33 @@ passport.use(
 app.use(express.json());
 app.use(cors());
 app.use(passport.initialize());
+
+app.get("/", (req, res) => {
+  res.json({ message: "User API running" });
+});
+
 app.post("/api/user/register", (req, res) => {
   userService
     .registerUser(req.body)
     .then((msg) => {
-      res.json({ message: msg });
+      const text =
+        typeof msg === "string"
+          ? msg
+          : msg && msg.message
+          ? msg.message
+          : "Registration successful";
+      res.json({ message: text });
     })
     .catch((err) => {
-      const msg =
+      const text =
         typeof err === "string"
           ? err
           : err && err.message
           ? err.message
           : "Registration failed";
-      res.status(422).json({ message: msg });
+      res.status(422).json({ message: text });
     });
 });
-
 
 app.post("/api/user/login", (req, res) => {
   userService
@@ -62,8 +72,14 @@ app.post("/api/user/login", (req, res) => {
 
       res.json({ message: "login successful", token });
     })
-    .catch((msg) => {
-      res.status(422).json({ message: msg });
+    .catch((err) => {
+      const text =
+        typeof err === "string"
+          ? err
+          : err && err.message
+          ? err.message
+          : "Login failed";
+      res.status(422).json({ message: text });
     });
 });
 
@@ -76,8 +92,14 @@ app.get(
       .then((data) => {
         res.json(data);
       })
-      .catch((msg) => {
-        res.status(422).json({ error: msg });
+      .catch((err) => {
+        const text =
+          typeof err === "string"
+            ? err
+            : err && err.message
+            ? err.message
+            : "Unable to get favourites";
+        res.status(422).json({ message: text });
       });
   }
 );
@@ -91,8 +113,14 @@ app.put(
       .then((data) => {
         res.json(data);
       })
-      .catch((msg) => {
-        res.status(422).json({ error: msg });
+      .catch((err) => {
+        const text =
+          typeof err === "string"
+            ? err
+            : err && err.message
+            ? err.message
+            : "Unable to add favourite";
+        res.status(422).json({ message: text });
       });
   }
 );
@@ -106,13 +134,19 @@ app.delete(
       .then((data) => {
         res.json(data);
       })
-      .catch((msg) => {
-        res.status(422).json({ error: msg });
+      .catch((err) => {
+        const text =
+          typeof err === "string"
+            ? err
+            : err && err.message
+            ? err.message
+            : "Unable to remove favourite";
+        res.status(422).json({ message: text });
       });
   }
 );
-if (!process.env.VERCEL) {
 
+if (!process.env.VERCEL) {
   userService
     .connect()
     .then(() => {
@@ -136,5 +170,3 @@ if (!process.env.VERCEL) {
 }
 
 module.exports = app;
-
-

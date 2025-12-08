@@ -18,5 +18,8 @@
     "mongoose": "^9.0.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1"
+  },
+  "devDependencies": {
+    "@vercel/node": "^5.5.15"
   }
 }

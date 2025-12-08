@@ -1,15 +1,24 @@
 const express = require("express");
 const cors = require("cors");
+const dotenv = require("dotenv");
 const jwt = require("jsonwebtoken");
-require("dotenv").config();
+const userService = require("./user-service");
 
-const userService = require("./user-service.js");
+dotenv.config();
 
 const app = express();
-const HTTP_PORT = process.env.PORT || 8080;
 
 app.use(cors());
 app.use(express.json());
+
+userService
+  .connect()
+  .then(() => {
+    console.log("Connected to MongoDB");
+  })
+  .catch((err) => {
+    console.log(err);
+  });
 
 app.get("/", (req, res) => {
   res.json({ message: "User API running" });
@@ -30,9 +39,8 @@ app.post("/api/user/login", (req, res) => {
   userService
     .checkUser(req.body)
     .then((user) => {
-      const payload = { _id: user._id, userName: user.userName };
-      const token = jwt.sign(payload, process.env.JWT_SECRET, {
-        expiresIn: "1h",
+      const token = jwt.sign(user, process.env.JWT_SECRET, {
+        expiresIn: "1h"
       });
       res.json({ message: "login successful", token });
     })
@@ -42,23 +50,19 @@ app.post("/api/user/login", (req, res) => {
 });
 
 function ensureToken(req, res, next) {
-  const authHeader = req.headers["authorization"];
-  if (!authHeader) {
-    return res.status(403).json({ message: "No token provided" });
-  }
-
+  const authHeader = req.headers["authorization"] || "";
   const parts = authHeader.split(" ");
-  if (parts.length !== 2 || parts[0] !== "JWT") {
-    return res.status(403).json({ message: "Malformed token" });
+  const token = parts.length === 2 ? parts[1] : null;
+
+  if (!token) {
+    return res.status(401).json({ message: "Access denied" });
   }
 
-  const token = parts[1];
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) {
       return res.status(403).json({ message: "Invalid token" });
     }
-    req.user = decoded;
+    req.user = user;
     next();
   });
 }
@@ -96,14 +100,4 @@ app.delete("/api/user/favourites/:id", ensureToken, (req, res) => {
     });
 });
 
-userService
-  .connect()
-  .then(() => {
-    app.listen(HTTP_PORT, () => {
-      console.log("API listening on " + HTTP_PORT);
-    });
-  })
-  .catch((err) => {
-    console.log(err);
-    process.exit(1);
-  });
+module.exports = app;

@@ -1,118 +1,134 @@
 const express = require("express");
 const cors = require("cors");
+const dotenv = require("dotenv");
 const jwt = require("jsonwebtoken");
-const passport = require("passport");
-const passportJWT = require("passport-jwt");
 const userService = require("./user-service");
 
+dotenv.config();
+
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
-const ExtractJwt = passportJWT.ExtractJwt;
-const JwtStrategy = passportJWT.Strategy;
-
-const jwtOptions = {
-  jwtFromRequest: ExtractJwt.fromAuthHeaderWithScheme("jwt"),
-  secretOrKey: process.env.JWT_SECRET
-};
-
-passport.use(
-  new JwtStrategy(jwtOptions, (jwt_payload, done) => {
-    if (jwt_payload.userName) {
-      return done(null, jwt_payload);
-    } else {
-      return done(null, false);
-    }
+userService
+  .connect()
+  .then(() => {
+    console.log("Connected to MongoDB");
   })
-);
+  .catch(err => {
+    console.log(err);
+  });
 
-app.use(passport.initialize());
-
-function ensureAuth(req, res, next) {
-  passport.authenticate("jwt", { session: false }, (err, user) => {
-    if (err || !user) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-    req.user = user;
-    next();
-  })(req, res, next);
-}
+app.get("/", (req, res) => {
+  res.json({ message: "User API running" });
+});
 
 app.post("/api/user/register", (req, res) => {
   userService
     .registerUser(req.body)
-    .then(() => res.status(201).json({ message: "User created" }))
-    .catch(err => res.status(422).json(err));
+    .then(msg => {
+      res.json({ message: msg });
+    })
+    .catch(err => {
+      res.status(422).json({ message: err });
+    });
 });
 
 app.post("/api/user/login", (req, res) => {
   userService
     .checkUser(req.body)
     .then(user => {
-      const payload = {
-        userName: user.userName,
-        email: user.email
-      };
-      const token = jwt.sign(payload, jwtOptions.secretOrKey, {
+      const token = jwt.sign(user, process.env.JWT_SECRET, {
         expiresIn: "2h"
       });
-      res.json({ message: "login successful", token: token });
+      res.json({ message: "login successful", token });
     })
-    .catch(err => res.status(422).json(err));
-});
-
-app.get("/api/user/favourites", ensureAuth, (req, res) => {
-  userService
-    .getFavourites(req.user.userName)
-    .then(favs => res.json(favs))
-    .catch(err => res.status(422).json(err));
-});
-
-app.put("/api/user/favourites/:id", ensureAuth, (req, res) => {
-  userService
-    .addFavourite(req.user.userName, req.params.id)
-    .then(favs => res.json(favs))
-    .catch(err => res.status(422).json(err));
-});
-
-app.delete("/api/user/favourites/:id", ensureAuth, (req, res) => {
-  userService
-    .removeFavourite(req.user.userName, req.params.id)
-    .then(favs => res.json(favs))
-    .catch(err => res.status(422).json(err));
-});
-
-app.get("/api/user/history", ensureAuth, (req, res) => {
-  userService
-    .getHistory(req.user.userName)
-    .then(history => res.json(history))
-    .catch(err => res.status(422).json(err));
-});
-
-app.post("/api/user/history", ensureAuth, (req, res) => {
-  userService
-    .addHistory(req.user.userName, req.body)
-    .then(history => res.json(history))
-    .catch(err => res.status(422).json(err));
-});
-
-app.delete("/api/user/history/:id", ensureAuth, (req, res) => {
-  userService
-    .removeHistory(req.user.userName, req.params.id)
-    .then(history => res.json(history))
-    .catch(err => res.status(422).json(err));
-});
-
-const HTTP_PORT = process.env.PORT || 8080;
-
-userService
-  .initialize(process.env.MONGODB_CONN_STRING)
-  .then(() => {
-    app.listen(HTTP_PORT, () => {
-      console.log("API listening on: " + HTTP_PORT);
+    .catch(err => {
+      res.status(422).json({ message: err });
     });
-  })
-  .catch(err => {
-    console.log("Unable to start server: " + err);
+});
+
+function ensureToken(req, res, next) {
+  const authHeader = req.headers["authorization"] || "";
+  const parts = authHeader.split(" ");
+  const token = parts.length === 2 ? parts[1] : null;
+  if (!token) {
+    return res.status(401).json({ message: "Access denied" });
+  }
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ message: "Invalid token" });
+    }
+    req.user = user;
+    next();
   });
+}
+
+app.get("/api/user/favourites", ensureToken, (req, res) => {
+  userService
+    .getFavourites(req.user._id)
+    .then(favs => {
+      res.json(favs);
+    })
+    .catch(err => {
+      res.status(422).json({ message: err });
+    });
+});
+
+app.put("/api/user/favourites/:id", ensureToken, (req, res) => {
+  userService
+    .addFavourite(req.user._id, req.params.id)
+    .then(favs => {
+      res.json(favs);
+    })
+    .catch(err => {
+      res.status(422).json({ message: err });
+    });
+});
+
+app.delete("/api/user/favourites/:id", ensureToken, (req, res) => {
+  userService
+    .removeFavourite(req.user._id, req.params.id)
+    .then(favs => {
+      res.json(favs);
+    })
+    .catch(err => {
+      res.status(422).json({ message: err });
+    });
+});
+
+app.get("/api/user/history", ensureToken, (req, res) => {
+  userService
+    .getHistory(req.user._id)
+    .then(history => {
+      res.json(history);
+    })
+    .catch(err => {
+      res.status(422).json({ message: err });
+    });
+});
+
+app.post("/api/user/history", ensureToken, (req, res) => {
+  userService
+    .addHistory(req.user._id, req.body)
+    .then(history => {
+      res.json(history);
+    })
+    .catch(err => {
+      res.status(422).json({ message: err });
+    });
+});
+
+app.delete("/api/user/history/:id", ensureToken, (req, res) => {
+  userService
+    .removeHistory(req.user._id, req.params.id)
+    .then(history => {
+      res.json(history);
+    })
+    .catch(err => {
+      res.status(422).json({ message: err });
+    });
+});
+
+module.exports = app;

@@ -3,83 +3,96 @@ const bcrypt = require("bcryptjs");
 
 let User;
 
-module.exports.initialize = function (connectionString) {
+function initUserModel() {
+  if (User) return;
+  const userSchema = new mongoose.Schema({
+    userName: { type: String, unique: true },
+    password: String,
+    email: String,
+    favourites: [String],
+    history: [
+      {
+        title: String,
+        workId: String,
+        date: Date
+      }
+    ]
+  });
+  User = mongoose.model("users", userSchema);
+}
+
+module.exports.connect = function () {
   return new Promise((resolve, reject) => {
-    const db = mongoose.createConnection(connectionString);
-
-    db.on("error", err => {
-      reject(err);
-    });
-
-    db.once("open", () => {
-      User = db.model(
-        "users",
-        new mongoose.Schema({
-          userName: {
-            type: String,
-            unique: true
-          },
-          password: String,
-          email: String,
-          favourites: [String],
-          history: [
-            {
-              title: String,
-              workId: String,
-              date: Date
-            }
-          ]
-        })
-      );
-      resolve();
-    });
+    mongoose
+      .connect(process.env.MONGO_URL)
+      .then(() => {
+        initUserModel();
+        resolve();
+      })
+      .catch(err => {
+        reject("Unable to connect to MongoDB: " + err);
+      });
   });
 };
 
 module.exports.registerUser = function (userData) {
   return new Promise((resolve, reject) => {
-    if (userData.password !== userData.password2) {
-      reject("Passwords do not match");
-      return;
+    if (!userData.userName || !userData.password || !userData.password2) {
+      return reject("All fields are required");
     }
-
+    if (userData.password !== userData.password2) {
+      return reject("Passwords do not match");
+    }
     bcrypt
       .hash(userData.password, 10)
       .then(hash => {
+        initUserModel();
         const newUser = new User({
           userName: userData.userName,
           password: hash,
-          email: userData.email,
+          email: userData.email || "",
           favourites: [],
           history: []
         });
-        return newUser.save();
+        newUser
+          .save()
+          .then(() => {
+            resolve("User created");
+          })
+          .catch(err => {
+            if (err.code === 11000) {
+              reject("User name already taken");
+            } else {
+              reject("There was an error creating the user: " + err);
+            }
+          });
       })
-      .then(() => resolve())
-      .catch(err => {
-        if (err.code === 11000) {
-          reject("User Name already taken");
-        } else {
-          reject("There was an error creating the user: " + err);
-        }
+      .catch(() => {
+        reject("There was an error encrypting the password");
       });
   });
 };
 
 module.exports.checkUser = function (userData) {
   return new Promise((resolve, reject) => {
+    if (!userData.userName || !userData.password) {
+      return reject("User name and password are required");
+    }
+    initUserModel();
     User.findOne({ userName: userData.userName })
       .then(user => {
         if (!user) {
-          reject("Unable to find user: " + userData.userName);
-          return;
+          return reject("Unable to find user: " + userData.userName);
         }
-
-        bcrypt.compare(userData.password, user.password).then(result => {
-          if (result) {
-            resolve(user);
+        bcrypt.compare(userData.password, user.password).then(isMatch => {
+          if (!isMatch) {
+            reject("Incorrect password for user: " + userData.userName);
           } else {
-            reject("Incorrect Password for user: " + userData.userName);
+            resolve({
+              _id: user._id.toString(),
+              userName: user.userName,
+              email: user.email || ""
+            });
           }
         });
       })
@@ -89,116 +102,131 @@ module.exports.checkUser = function (userData) {
   });
 };
 
-module.exports.getFavourites = function (userName) {
+module.exports.getFavourites = function (userId) {
   return new Promise((resolve, reject) => {
-    User.findOne({ userName })
+    initUserModel();
+    User.findById(userId)
       .then(user => {
         if (!user) {
-          reject("User not found");
-          return;
+          return reject("User not found");
         }
         resolve(user.favourites || []);
       })
-      .catch(err => reject("Unable to get favourites: " + err));
+      .catch(err => {
+        reject("There was an error getting favourites: " + err);
+      });
   });
 };
 
-module.exports.addFavourite = function (userName, workId) {
+module.exports.addFavourite = function (userId, workId) {
   return new Promise((resolve, reject) => {
-    User.findOne({ userName })
+    initUserModel();
+    User.findById(userId)
       .then(user => {
         if (!user) {
-          reject("User not found");
-          return;
+          return reject("User not found");
         }
         if (!user.favourites.includes(workId)) {
           user.favourites.push(workId);
         }
-        return user.save();
+        user
+          .save()
+          .then(() => resolve(user.favourites || []))
+          .catch(err =>
+            reject("There was an error adding favourite: " + err)
+          );
       })
-      .then(user => {
-        if (user) {
-          resolve(user.favourites || []);
-        }
-      })
-      .catch(err => reject("Unable to add favourite: " + err));
+      .catch(err =>
+        reject("There was an error adding favourite: " + err)
+      );
   });
 };
 
-module.exports.removeFavourite = function (userName, workId) {
+module.exports.removeFavourite = function (userId, workId) {
   return new Promise((resolve, reject) => {
-    User.findOne({ userName })
+    initUserModel();
+    User.findById(userId)
       .then(user => {
         if (!user) {
-          reject("User not found");
-          return;
+          return reject("User not found");
         }
         user.favourites = (user.favourites || []).filter(id => id !== workId);
-        return user.save();
+        user
+          .save()
+          .then(() => resolve(user.favourites || []))
+          .catch(err =>
+            reject("There was an error removing favourite: " + err)
+          );
       })
-      .then(user => {
-        if (user) {
-          resolve(user.favourites || []);
-        }
-      })
-      .catch(err => reject("Unable to remove favourite: " + err));
+      .catch(err =>
+        reject("There was an error removing favourite: " + err)
+      );
   });
 };
 
-module.exports.getHistory = function (userName) {
+module.exports.getHistory = function (userId) {
   return new Promise((resolve, reject) => {
-    User.findOne({ userName })
+    initUserModel();
+    User.findById(userId)
       .then(user => {
         if (!user) {
-          reject("User not found");
-          return;
+          return reject("User not found");
         }
         resolve(user.history || []);
       })
-      .catch(err => reject("Unable to get history: " + err));
+      .catch(err => {
+        reject("There was an error getting history: " + err);
+      });
   });
 };
 
-module.exports.addHistory = function (userName, historyEntry) {
+module.exports.addHistory = function (userId, historyEntry) {
   return new Promise((resolve, reject) => {
-    User.findOne({ userName })
+    initUserModel();
+    User.findById(userId)
       .then(user => {
         if (!user) {
-          reject("User not found");
-          return;
+          return reject("User not found");
         }
         user.history.push({
           title: historyEntry.title,
           workId: historyEntry.workId,
           date: new Date()
         });
-        return user.save();
+        user
+          .save()
+          .then(() => resolve(user.history || []))
+          .catch(err =>
+            reject("There was an error adding history: " + err)
+          );
       })
-      .then(user => {
-        if (user) {
-          resolve(user.history || []);
-        }
-      })
-      .catch(err => reject("Unable to add history: " + err));
+      .catch(err =>
+        reject("There was an error adding history: " + err)
+      );
   });
 };
 
-module.exports.removeHistory = function (userName, id) {
+module.exports.removeHistory = function (userId, id) {
   return new Promise((resolve, reject) => {
-    User.findOne({ userName })
+    initUserModel();
+    User.findById(userId)
       .then(user => {
         if (!user) {
-          reject("User not found");
-          return;
+          return reject("User not found");
         }
-        user.history.id(id).remove();
-        return user.save();
-      })
-      .then(user => {
-        if (user) {
-          resolve(user.history || []);
+        const entry = user.history.id(id);
+        if (entry) {
+          entry.remove();
         }
+        user
+          .save()
+          .then(() => resolve(user.history || []))
+          .catch(err =>
+            reject("There was an error removing history: " + err)
+          );
       })
-      .catch(err => reject("Unable to remove history: " + err));
+      .catch(err =>
+        reject("There was an error removing history: " + err)
+      );
   });
 };
